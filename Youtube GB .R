@@ -5,11 +5,23 @@ library(wordcloud)
 library(wordcloud2)
 library(Hmisc)
 library(shuffle)
-GBcomments = read_csv("GBcomments.csv")
-GBvideos = read_csv("GBvideos.csv")
+library(stringr)
+
+
+
+#Loading dataset and cleaning 
+GBcomments = na.omit(read_csv("GBcomments.csv"))
+GBvideos = na.omit(read_csv("GBvideos.csv"))
 
 names(GBcomments)[1]<- "comment_ID"
 names(GBcomments)[3] = "comment_likes"
+
+sum(is.na(GBvideos))
+sum(is.na(GBcomments))
+
+
+#
+
 
 attach(GBcomments)
 attach(GBvideos)
@@ -67,10 +79,25 @@ transformer <- function(text){
     tm_map(removeNumbers)%>%  
     tm_map(removeWords,stopwords("en"))%>%
     tm_map(removeWords, toupper(stopwords("en")))%>%
-    tm_map(removeWords, capitalize(stopwords("en")))
+    tm_%>%
+    tm_map(removeWords, capitalize(stopwords("en"))) #%>%tm_map(removeWords, capitalize(c("official","video","trailer","makeup","new","first","live","halloween","music","day")))
     
 }
 
+# The two most used words appear much more often in ALL CAPS than in lower case or just wifth normal capitalization : suggesting that indeed video attractiveness is bazsed on "sight effect" 
+#naive official : 707
+# non cap official : 689
+#capped official : 50
+#OFFICIAL 657 --> 1300% more • VIDEO : 422 --> 1200% more 
+#official 18 • video : 16
+#Official 32 • Video : 19 
+#How to show this : base way with calculus 
+#Stupid way with regex : about 23% more all caps than non all caps --> this would suggest that the most used words are also disproportionately more likelly to be all capped 
+sum(str_count(GBvideos$title,"\\b[a-z]+\\b"))
+sum(str_count(GBvideos$title,"\\b[A-Z]+\\b"))
+
+
+#Counter of the number of occurences of most used strings
 counter <- function(corp) {
   tdm = TermDocumentMatrix(corp)
   m = as.matrix(tdm)
@@ -82,48 +109,35 @@ counter <- function(corp) {
 
 
 title_classification = transformer(newGB$title)
-wordcloud(title_classification,min.freq = 100,scale=c(2,.5), max.words = 100,random.order = F,colors = brewer.pal(8,"Dark2"))
+wordcloud(title_classification,scale=c(2,.5), max.words = 50,random.order = F,colors = brewer.pal(8,"Dark2"))
 counter(title_classification)
 
 tag_classification = transformer(newGB$tags)
-wordcloud(tag_classification,min.freq = 100,scale=c(2,.5), max.words = 100,random.order = TRUE,colors = brewer.pal(8,"Dark2"))
+wordcloud(tag_classification,scale=c(2,.5), max.words = 50,random.order = TRUE,colors = brewer.pal(8,"Dark2"))
 counter(tag_classification)
 
 
 channel_classification = transformer(newGB$channel_title)
-wordcloud(tag_classification,min.freq = 100,scale=c(2,.5), max.words = 100,random.order = TRUE,colors = brewer.pal(8,"Dark2"))
+wordcloud(tag_classification,scale=c(2,.5), max.words = 50,random.order = TRUE,colors = brewer.pal(8,"Dark2"))
 counter(channel_classification)
 
-#WE HAVE TO SHUFFLE 
+#WE HAVE TO SHUFFLE THE DATASET BECAUSE IT IS TOO BIG FOR THE COMPUTER TO COMPUTE EFFICIENTLY
 set.seed(1)
-rows = sample(nrow(GBcomments),100000,replace = T)
+rows = sample(nrow(GBcomments),200000,replace = T)
 GB_sample = GBvideos[rows,]
 GB_sample_classification = transformer(GB_sample)
 
-
-#comment_classification = transformer(GBcomments$comment_text)
-wordcloud(GB_sample_classification,min.freq = 110,scale=c(2,.5), max.words = 50,random.order = TRUE,colors = brewer.pal(8,"Dark2"))
+wordcloud(GB_sample_classification,scale=c(2,.5), max.words = 50,random.order = TRUE,colors = brewer.pal(8,"Dark2"))
 counter(GB_sample_classification)
 ###########################################
-GB_most <- as.data.frame(newGB$channel_title[!duplicated(newGB$title)])
-names(GB_most) <- c("channel")
-GB_most <- as.data.frame(sort(table(GB_most$channel), decreasing = TRUE))
-names(GB_most) <- c("channel", "count")
-
-ggplot(us_ch_df[1:10,], aes(x = channel, y = count, fill = factor(channel))) + geom_bar(stat = "identity") + 
-  theme(axis.text.x = element_text(angle = 45,hjust = 1), legend.position = "none") + scale_x_discrete(name =
-                                                                                                         "Channel ",label = function(x) str_wrap(x, width = 15)) + scale_y_continuous(name = "Number of videos") + 
-  labs(title = "Plot of top 10 trending channels in US")
-# 1 = Film&animation
-# 2 = Autos & Vehicles
-# 10 = Music
-# 15 = Pets & animals
-
 
 
 detach(GBcomments)
 detach(GBvideos)
 detach(newGB)
+
+
+
 
 
 
