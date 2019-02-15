@@ -1,0 +1,400 @@
+---
+title: "Youtube_compiled"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+
+
+#Installing the datasets
+
+```{r}
+library(tree)
+library(maptree)
+library(MLmetrics)
+library(corrplot)
+library(readr)
+library(dplyr)
+library(tm)
+library(wordcloud)
+library(wordcloud2)
+library(Hmisc)
+library(plotly)
+library(sentimentr)
+library(shuffle)
+library(stringr)
+library(syuzhet)
+```
+
+#Downloading the data
+```{r}
+df1 = na.omit(read_csv("GBvideos.csv"))
+
+```
+
+#Some feature creation
+```{r}
+#dropping useless columns 
+df1 = df1[1:9]
+
+#renaming the category columns 
+i=1
+for (i in (1:7993)){
+  
+  if (df1[i,4] == 1){
+    df1[i,4] = 'Film & Animation '
+  } 
+  else if (df1[i,4] == 2){
+    df1[i,4] = 'Autos & Vehicles'
+  } 
+  else if (df1[i,4] == 10){
+    df1[i,4] = 'Music'
+  } 
+  else if (df1[i,4] == 15){
+    df1[i,4] = 'Pets & Animal'
+  } 
+  else if (df1[i,4] == 17){
+    df1[i,4] = 'Sport'
+  } 
+  else if (df1[i,4] == 19){
+    df1[i,4] = 'Travel & Events'
+  } 
+  else if (df1[i,4] == 20){
+    df1[i,4] = 'Gaming'
+  } 
+  else if (df1[i,4] == 22){
+    df1[i,4] = 'People and Blogs'
+  } 
+  else if (df1[i,4] == 23){
+    df1[i,4] = 'Comedy'
+  } 
+  else if (df1[i,4] == 24){
+    df1[i,4] = 'Entertainment'
+  } 
+  else if (df1[i,4] == 25){
+    df1[i,4] = 'News and politics'
+  } 
+  else if (df1[i,4] == 26){
+    df1[i,4] = 'Howto and style'
+  } 
+  else if (df1[i,4] == 27){
+    df1[i,4] = 'Education'
+  } 
+  else if (df1[i,4] == 28){
+    df1[i,4] = 'Technology'
+  } 
+  else {
+    df1[i,4] = 'Misc.'
+  }
+}
+
+# Creating a few new features to better quantify the data
+feature_creation = function(df){
+  df['like_rate'] = df$likes/(df$likes+df$dislikes +1)
+  df['dislike_rate'] = df$dislikes/(df$likes+df$dislikes +1)
+  df['percent_reacted'] = (df$likes + df$dislikes)/(df$views+1)
+  df['percent_commented'] = (df$comment_total)/(df$views+1)
+  
+  return(df)
+}
+
+
+df1 = feature_creation(df1)
+
+
+
+
+
+```
+
+#Some preliminary data vizualisation tasks : boxplots, corplots and wordclouds
+
+```{r}
+#Performing some initial data visualization to identify outliers: 
+boxplot(df1[6:8])
+boxplot(df1[10:11])
+
+
+
+# Try to identify basic correlations : 
+cor_matrix = cor(df1[6:13])
+corrplot(cor_matrix)
+
+#Lets do some more visualisation with wordclouds 
+
+#We must first clean the dataset : remove white spaces, remove stopwords...
+cleaner <- function(x){
+  x = Corpus(VectorSource(x))
+  transformed= x %>%
+    tm_map(removePunctuation)%>%
+    tm_map(removePunctuation)%>%
+    tm_map(stripWhitespace)%>%
+    tm_map(removeNumbers)%>% 
+    tm_map(removeWords,stopwords("en"))%>% 
+    tm_map(removeWords, toupper(stopwords("en")))%>% 
+    tm_map(removeWords, capitalize(stopwords("en"))) 
+  
+#We do not run the command "tolower" because we want to show All capped titles
+  return(transformed)
+}
+
+#next we want to create two functions that count the words in the dataset and produce word clouds and lists of the most used ones
+counter_wordcloud <- function(x){
+  cleaned = cleaner(x)
+  wordcloud(cleaned,scale=c(2,.5), max.words = 50,random.order = F,colors = brewer.pal(8,"Dark2"))
+  
+  data_tdm = TermDocumentMatrix(cleaned,control = list(tolower = F))
+  m = as.matrix(data_tdm)
+  v <- sort(rowSums(m),decreasing=TRUE)
+  d <- data.frame(word = names(v),freq=v)
+  print(head(d,20))
+  
+}
+counter <- function(corp) {
+  tdm = TermDocumentMatrix(corp,control = list(tolower = F))
+  m = as.matrix(tdm)
+  v <- sort(rowSums(m),decreasing=TRUE)
+  d <- data.frame(word = names(v),freq=v)
+  print(head(d,20))
+  
+}
+
+counter_wordcloud(df1$title)
+counter_wordcloud(df1$tags)
+counter_wordcloud(df1$channel_title)
+
+
+
+```
+
+# A More qualitative approach : Sentiment analysis 
+
+*Defining the functions*
+
+```{r}
+
+#If we do some sentiment analysis we need a function to turn the cleaned corpus into a data frame.
+Data_framer <- function(corpus) {
+  df = data.frame(text = sapply(corpus, as.character), stringsAsFactors = FALSE)}
+
+
+# The we define a function that will take a data frame with text as an input and give us the nrc sentiments of the sentences + this function will also plot the distribution of diffenrent senti :
+Sentiment <- function(Thing,string) {
+  S = get_nrc_sentiment(Thing)
+  head(S)
+  TotalSentiment <- data.frame(colSums(S[,c(1:10)]))
+  names(TotalSentiment) <- "count"
+  TotalSentiment <- cbind("sentiment" = rownames(TotalSentiment), TotalSentiment)
+  rownames(TotalSentiment) <- NULL
+  
+  #total sentiment score of all texts
+  ggplot(data = TotalSentiment, aes(x = sentiment, y = count)) +
+    geom_bar(aes(fill = sentiment), stat = "identity") +
+    theme(legend.position = "none") +
+    xlab("Sentiment") + ylab("Total Count") + ggtitle(string)
+}
+
+#We use define another measure for sentiment scores : a function that gives us the polarity in the form of a centralized sentiment score 
+
+```
+
+*Performing the analysis*
+
+
+
+```{r echo=FALSE}
+clean_titles = cleaner(df1$title)
+clean_titles = Data_framer(clean_titles)
+Sentiment(clean_titles$text,"GB titles sentiment analysis")#ggplot
+Stitle = get_nrc_sentiment(clean_titles$text)#different sentiments
+title_sent = get_sentences(clean_titles$text)
+Poltitle = sentiment(title_sent)#polarity
+
+df1 = data.frame(df1,Stitle,Poltitle$sentiment)
+
+
+clean_tags = cleaner(df1$tags)
+clean_tags = Data_framer(clean_tags)
+Sentiment(clean_tags$text,"Tag sentiment analysis")
+
+clean_channel = cleaner(df1$channel_title)
+clean_channel = Data_framer(clean_channel)
+Sentiment(clean_channel$text,"Channel sentiment analysis")
+
+#Adding the dataframes of sentiments to a new dataframe used in our prediction tree later :
+
+
+```
+
+*Running some models on the basis of our new datasets*
+
+```{r}
+
+      
+mod1a = glm(views~ +percent_commented + percent_reacted +like_rate   +trust +anticipation +positive +disgust +sadness +fear +Poltitle.sentiment, family = gaussian, data = df1)
+#We have included these feelings because they have very low correlation with each other and with views so we do not run the risk of multicollinearity.
+summary(mod1a)
+
+mod1b = glm(like_rate~ +trust +anticipation +positive +disgust +sadness +fear +Poltitle.sentiment, family = gaussian, data = df1)
+summary(mod1b)#We want to see the effect of emotional material on likes, another important component of popularity via referencing for the youtube algorithm
+
+mod1c = glm(percent_commented~ +trust +anticipation +positive +disgust +sadness +fear +Poltitle.sentiment, family = gaussian, data = df1)
+summary(mod1c)#We want to measure the effect of emotional material on the tendency to comment, a very important source of referencing
+
+# We will plot a few graphs to illustrate the distribution of sentimentally charged language in titles  accross categories : it is important for a would be youtube to take care to fit the sensibilities of his or her viwership 
+
+```
+
+```{r}
+
+bar1 = plot_ly(df1,
+               name = 'Total number of Videos',
+               x = ~category_id,
+               y = ~joy,
+               type = "bar",
+               color =  I('darkgreen')) %>%
+  layout(title = "Joy values by category",
+         xaxis = list(title = "Category names"),
+         yaxis = list(title = " Sentiment values"))
+bar1
+
+```
+
+```{r}
+
+bar2 = plot_ly(df1,
+               name = 'Total number of Videos',
+               x = ~category_id,
+               y = ~anger,
+               type = "bar",
+               color =  I('darkgreen')) %>%
+  layout(title = "Anger values by category",
+         xaxis = list(title = "Category names"),
+         yaxis = list(title = " Sentiment values"))
+bar2
+
+```
+
+```{r}
+bar3 = plot_ly(df1,
+               name = 'Total number of Videos',
+               x = ~category_id,
+               y = ~anticipation,
+               type = "bar",
+               color =  I('darkgreen')) %>%
+  layout(title = "Anticipation values by category",
+         xaxis = list(title = "Category names"),
+         yaxis = list(title = " Sentiment values"))
+bar3
+
+
+```
+```{r}
+bar4 = plot_ly(df1,
+               name = 'Total number of Videos',
+               x = ~category_id,
+               y = ~Poltitle.sentiment,
+               type = "bar",
+               color =  I('darkgreen')) %>%
+  layout(title = "Polarity values by category",
+         xaxis = list(title = "Category names"),
+         yaxis = list(title = " Sentiment values"))
+bar4
+
+
+```
+
+```{r}
+set.seed(45)
+
+#The following section deals with tree models and aims at classifying trending videos into two subgroups, based on their popularity.
+
+df_shortened=df1[6:24]
+Distinction_Popular = ifelse(df_shortened$views>100000,"Y","N") #creating a new variable that introduces "super trending videos" - highly popular videos based on the large number of views
+df1_Extended=data.frame(df_shortened,Distinction_Popular) #adding this variable to the dataframe
+
+#splitting the data frame into two groups - "normal trending videos"" and "super trending videos"
+Super_Trending = filter(df1_Extended, Distinction_Popular == "Y") #group of "super trending videos""
+Normal_Trending = filter(df1_Extended, Distinction_Popular == "N") #group of "normal trending videos"
+
+#in the following, both the group of the "super trending videos" and the "normal trending videos" are splitted into a training- and a testing data set, via a randomised allocation.
+
+#defining the split between the training and the testing data set
+Partition_Size=floor(0.7*nrow(Super_Trending)) #based on the common literature we consider 70%:30% (share training data : share testing data) a suitable split ratio
+Separation_Index=sample(seq_len(nrow(Super_Trending)), size = Partition_Size)
+
+
+Train_Super_Trending=Super_Trending[Separation_Index, ]#training data set of the "super trending videos"
+Test_Super_Trending=Super_Trending[-Separation_Index, ]#testing data set of the "super trending videos"
+
+#the corresponding splitting is performed on the "normal trending videos"
+Partition_Size=floor(0.7*nrow(Normal_Trending))
+Separation_Index=sample(seq_len(nrow(Normal_Trending)), size = Partition_Size)
+
+Train_Normal_Trending=Normal_Trending[Separation_Index, ]#training data set of the "normal trending videos"
+Test_Normal_Trending=Normal_Trending[-Separation_Index, ]#testing data set of the "normal trending videos"
+
+#finally, both separate training datasets as well as both separate testing data sets are combined. This two-step approach ensures that the relative portion of both super- and normal trending videos in each set does not get distorted during the randomisation procedure conducted above (note: the share of "super trending videos" is determined by setting the number of views that must be exceeded to be considered a "super trending video", see the definition of "Distinction_Popular" above)
+Train=rbind(Train_Super_Trending,Train_Normal_Trending)#final training data set, containing both "super trending videos" and "normal trending videos"
+Test=rbind(Test_Super_Trending,Test_Normal_Trending)#final testing data set, containing both "super trending videos" and "normal trending videos"
+
+#The following constitutes the approach introduced in the course problemsets 4 and 6. We draw the tree and prune it whilst monitoring the misclassification error. The initial selection of the variables used to build the tree is subject to a careful analysis performed by means of correlation matrices, to prevent multicollinearity. However, during several attempts in adding/removing variables and pruning different trees to arrive at the optimal size (no over- or underfitting) it became apparent that there is no way of constructing a tree of a sufficient level of detail as we are facing restrictions regarding the number of variables that can be integreated, since we only have a small bandwith of variables in our initial dataset. Our self-created variables that stem from the sentiment analyses lack explanatory power. Additionally many of our self-defined rates already contain the variable 'views' our tree aims at modeling The dataset obviously lacks additional variables that have crucial impact on the number of views. We ascribe this to missing time patterns and the omission of a graphical thumbnail analysis. Since the existing data set obviously fails to provide a sound basis for a regression / classification on views that delivers satisfactory results with regard to the limitations described above, the tree model is not considered to be an elementary part of our further analysis.
+
+Tree_Popularity=tree(Distinction_Popular~  +percent_commented +percent_reacted +like_rate + trust + anticipation + positive + disgust + sadness +fear +Poltitle.sentiment +likes +dislikes +comment_total, data=Train)#contructing the tree based on the training data after having made a detailed selection of the variables to take care of multicollinearity
+
+#using the tree to make predictions based on the test data set
+plot(Tree_Popularity)
+summary(Tree_Popularity)
+text(Tree_Popularity, cex=0.4, pretty=0)
+draw.tree(Tree_Popularity, cex=0.7)
+Validation = predict(Tree_Popularity, Test, type ="class")
+
+#in comparison to the true entitites contained in the test data set we calculate the error rate
+table(Test$Distinction_Popular)
+Validation_Table=table(Validation,Test$Distinction_Popular)
+Validation_Table
+Error_Rate=round((Validation_Table[1,2]+Validation_Table[2,1])/(Validation_Table[1,2]+Validation_Table[2,1]+Validation_Table[1,1]+Validation_Table[2,2]),4)
+"Error Rate:"
+Error_Rate
+#it becomes obvious that the error rate resulting from the test data is even smaller than the original error rate received based on the training data. This points to an underfitting of the model, however, due to the points described above, there are no possibilities to integrate further explaining variables in order to avoid underfitting.
+
+
+#However, we confirm our assumption of underfitting by performing several prunings, all of which yield higher error rates (in this example the error rate increased from around 5 to 6 percent)
+CV_Tree = cv.tree(Tree_Popularity, FUN=prune.misclass)
+Tree_Pruned = prune.misclass(Tree_Popularity, best=7)
+plot(Tree_Pruned)
+summary(Tree_Pruned)
+text(Tree_Pruned, cex=0.4, pretty=0)
+draw.tree(Tree_Pruned, cex=0.7)
+
+Size_vs_Deviation = data.frame(CV_Tree$size, CV_Tree$dev)
+Size_vs_Deviation
+#the optimal tree size equals the maximum tree size (15 nodes), which confirms our conjecture of underfitting. Hence pruning the tree does not make sense, it will only drive up the deviation.
+
+#finally, we perform the K10-Fold approach
+"Definition and Choice of Optimal Size"
+CV_Tree_K10 = cv.tree(Tree_Popularity, K= 10, FUN = prune.tree)
+Size_vs_Deviation_K10 = data.frame(CV_Tree_K10$size, CV_Tree_K10$dev)
+Size_vs_Deviation_K10
+Size_Optimised = CV_Tree_K10$size[which(CV_Tree_K10$dev==min(CV_Tree_K10$dev))]
+Tree_K10 = prune.misclass(Tree_Popularity, best=Size_Optimised)
+Model_Predictions_K10_Training = predict(Tree_K10, Train, type ="class")
+
+"Validation of Training Data Runs"
+Validation_Table_K10_Training = table(Model_Predictions_K10_Training,Train$Distinction_Popular)
+Error_Rate_K10_Training = round(((Validation_Table_K10_Training[1,2]+Validation_Table_K10_Training[2,1])/(Validation_Table_K10_Training[1,2]+Validation_Table_K10_Training[2,1]+Validation_Table_K10_Training[1,1]+Validation_Table_K10_Training[2,2])),4)
+"Error_Rate_K10_Training:"
+Error_Rate_K10_Training
+Model_Predictions_K10_Test = predict(Tree_K10, Test, type ="class")
+
+"Validation of Testing Data Runs"
+Validation_Table_K10_Test = table(Model_Predictions_K10_Test,Test$Distinction_Popular)
+Validation_Table_K10_Test
+Error_Rate_K10_Test = round(((Validation_Table_K10_Test[1,2]+Validation_Table_K10_Test[2,1])/(Validation_Table_K10_Test[1,2]+Validation_Table_K10_Test[2,1]+Validation_Table_K10_Test[1,1]+Validation_Table_K10_Test[2,2])),4)
+"Error_Rate_K10_Test:"
+Error_Rate_K10_Test
+
+#It does not come at a surprise that the results allow the same interpretation - the test error is still smaller than the training error. Hence, the conjectures provided in the beginning seem to kick in. Our dataset and thus our model lacks a sufficient amount of variables to explain what leads to a high number of views. Further, a closer look at the tree shows, that the single sentiment variables used do not have a very strong explanatory impact. It is the main fundamental variables such as reactions and comments that seem to be associated with views.
+```
