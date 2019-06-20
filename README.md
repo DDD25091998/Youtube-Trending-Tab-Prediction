@@ -1,3 +1,3 @@
 # youtube_project
-ST309 project
-1st propsal D Gorduza
+This is a project done in R to predict the trending tab of the Youtube site. 
+The data 
